@@ -122,32 +122,6 @@ command -v file &>/dev/null || die "'file' not found. Is file(1) installed?"
 [[ -d "$PKG_DB" ]] || die "Package database not found at $PKG_DB"
 
 # ── Build the shared-library → package reverse lookup map ────────────────────
-#
-# /var/log/packages/ contains one plain-text file per installed package.
-# Each file is named:   <name>-<version>-<arch>-<build>
-# Example filename:     glibc-2.34-x86_64-1
-#
-# Each file looks like this:
-#   PACKAGE NAME:     glibc
-#   COMPRESSED PACKAGE SIZE:  ...
-#   ...more metadata...
-#   FILE LIST:
-#   ./
-#   ./lib64/
-#   ./lib64/libc.so.6
-#   ./lib64/libm.so.6
-#   ./usr/lib64/libpthread.so
-#   ...
-#
-# We scan every package file, find all .so entries in the FILE LIST,
-# and build a hash map (associative array):
-#   SO_OWNER["libc.so.6"]  = "glibc-2.34-x86_64-1"
-#   SO_OWNER["libm.so.6"]  = "glibc-2.34-x86_64-1"
-#   SO_OWNER["libcap.so.2"] = "aaa_libraries-1.0-x86_64-19"
-#   ...
-#
-# Later, when ldd tells us a binary needs libc.so.6, we look it up here
-# and immediately know it comes from the glibc package.
 
 info "Building shared-library → package map (this may take a moment)…"
 

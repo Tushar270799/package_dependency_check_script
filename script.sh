@@ -114,7 +114,7 @@ TARGET="${POSITIONAL[0]}"   # the thing we want to find deps for
 # ── Sanity checks: required external tools ────────────────────────────────────
 # ldd   : "list dynamic dependencies" — prints shared libs an ELF needs
 # file  : identifies file types by magic bytes (we use it to detect ELFs)
-# Both are present in every base Slackware/Nakshatra installation.
+# Both are present in every base Nakshatra installation.
 command -v ldd  &>/dev/null || die "'ldd' not found. Is glibc installed?"
 command -v file &>/dev/null || die "'file' not found. Is file(1) installed?"
 

@@ -155,17 +155,10 @@ for pkgfile in "$PKG_DB"/*; do
 
         # ── Inside FILE LIST ──────────────────────────────────────────────────
 
-        # Directory entries end with /  (e.g. "usr/lib64/")
-        # We only want files, not directories, so skip these.
-        [[ "$line" == */ ]] && continue
-
-        # File path entries may appear in two forms:
-        #   ./usr/lib64/libfoo.so.1.2.3   (older Slackware: with leading ./)
-        #   usr/lib64/libfoo.so.1.2.3     (newer: without ./)
-        #
-        # Strip the leading "./" if present, then get just the filename.
-        stripped_line="${line#./}"            # remove ./ prefix if present
-        basename_line="${stripped_line##*/}"  # everything after the last /  = filename
+        [[ "$line" == */ ]] && continue # skip direcotry    
+        
+        stripped_line="${line#./}"            # ./usr/lib/libc.so.6 → usr/lib/libc.so.6
+        basename_line="${stripped_line##*/}"  # usr/lib/libc.so.6 → libc.so.6
 
         # Only index shared library files.
         # They match either:

@@ -76,8 +76,9 @@ TMPDIR_WORK=""      # path to temp extraction dir; empty until a .txz is used
 # ── usage(): print the Usage block from the script header and exit ────────────
 # sed -n with two address patterns prints only lines between those patterns.
 # The second sed strips the leading "# " comment prefix from each line.
-# \? means space is optional
-# $0 - means script 
+# \? means space is optional.
+# $0 - means script.
+
 usage() {
     sed -n '/^# Usage:/,/^# ====/p' "$0" | sed 's/^# \?//'
     exit 0
@@ -106,6 +107,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Require at least one positional argument
+# Returns number of elements in the array
 [[ ${#POSITIONAL[@]} -eq 0 ]] && die "No target specified. Use -h for help."
 TARGET="${POSITIONAL[0]}"   # the thing we want to find deps for
 

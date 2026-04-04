@@ -77,6 +77,7 @@ TMPDIR_WORK=""      # path to temp extraction dir; empty until a .txz is used
 # sed -n with two address patterns prints only lines between those patterns.
 # The second sed strips the leading "# " comment prefix from each line.
 # \? means space is optional
+# $0 - means script 
 usage() {
     sed -n '/^# Usage:/,/^# ====/p' "$0" | sed 's/^# \?//'
     exit 0

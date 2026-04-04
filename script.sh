@@ -125,9 +125,12 @@ command -v file &>/dev/null || die "'file' not found. Is file(1) installed?"
 
 info "Building shared-library → package map (this may take a moment)…"
 
-# declare -A creates an associative array (hash map / dictionary).
-# The =() initialises it as empty — REQUIRED under set -u, otherwise
-# accessing a key before any value is set would error with "unbound variable".
+# Associative array:
+# declare - define variable with attribute
+# -A - Stands for Associative Array
+# SO_OWNER - name of associated array.
+# =() - start empty array.
+
 declare -A SO_OWNER=()
 
 for pkgfile in "$PKG_DB"/*; do

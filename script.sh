@@ -160,10 +160,6 @@ for pkgfile in "$PKG_DB"/*; do
         stripped_line="${line#./}"            # ./usr/lib/libc.so.6 → usr/lib/libc.so.6
         basename_line="${stripped_line##*/}"  # usr/lib/libc.so.6 → libc.so.6
 
-        # Only index shared library files.
-        # They match either:
-        #   *.so      (bare soname, e.g. libfoo.so)
-        #   *.so.*    (versioned,   e.g. libfoo.so.1  or  libfoo.so.1.2.3)
         if [[ "$basename_line" == *.so || "$basename_line" == *.so.* ]]; then
 
             # Index the full versioned name: "libfoo.so.1.2.3" → package
@@ -184,10 +180,8 @@ done
 info "Indexed ${#SO_OWNER[@]} shared library entries."
 
 # ── resolve_so(): map a .so name or path to its owning package ────────────────
-#
 # Input:  $1 = a shared library path (/lib64/libc.so.6) or name (libc.so.6)
 # Output: the owning package name printed to stdout, or empty string if not found
-#
 # Four strategies tried in order from fastest to slowest:
 #   1. Direct exact lookup in SO_OWNER map
 #   2. Progressively strip version suffixes and retry

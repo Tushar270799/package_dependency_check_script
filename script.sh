@@ -43,9 +43,7 @@
 set -euo pipefail
 
 # ── Terminal colour codes ─────────────────────────────────────────────────────
-# $'...' is bash ANSI-C quoting — it allows escape sequences like \e inside strings.
-# These are standard ANSI escape codes supported by all Linux terminals.
-# Every coloured string MUST end with $RST to reset formatting.
+
 RED=$'\e[1;31m'   # bold red    — fatal errors
 YEL=$'\e[1;33m'   # bold yellow — warnings and unresolved items
 GRN=$'\e[1;32m'   # bold green  — package names in output
@@ -55,15 +53,10 @@ RST=$'\e[0m'      # reset all   — must follow every coloured string
 
 # ── Helper functions ──────────────────────────────────────────────────────────
 
-# die: print a red ERROR message to stderr, then exit with code 1 (failure).
-# All fatal conditions use this.  "$*" joins all arguments with spaces.
 die()  { echo "${RED}ERROR:${RST} $*" >&2; exit 1; }
 
-# info: print a cyan ":: message" status line to stdout during normal operation.
 info() { echo "${CYN}::${RST} $*"; }
 
-# warn: print a yellow WARN message to stderr.
-# Non-fatal — the script continues after a warning.
 warn() { echo "${YEL}WARN:${RST}  $*" >&2; }
 
 # ── Default option values ─────────────────────────────────────────────────────
@@ -74,10 +67,6 @@ PKG_DB="/var/log/packages"  # Slackware/Nakshatra package database directory
 TMPDIR_WORK=""      # path to temp extraction dir; empty until a .txz is used
 
 # ── usage(): print the Usage block from the script header and exit ────────────
-# sed -n with two address patterns prints only lines between those patterns.
-# The second sed strips the leading "# " comment prefix from each line.
-# \? means space is optional.
-# $0 - means script.
 
 usage() {
     sed -n '/^# Usage:/,/^# ====/p' "$0" | sed 's/^# \?//'
@@ -90,10 +79,6 @@ usage() {
 
 POSITIONAL=()   # collects non-option arguments (the target package/binary/txz file)
 
-# Loop through all arguments.
-# We use a while loop instead of getopts because we want to support
-# long options like --recursive as well as short ones like -r.
-# $# → number of arguments passed
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -r|--recursive)  RECURSIVE=1 ;;
@@ -106,15 +91,11 @@ while [[ $# -gt 0 ]]; do
     shift   # advance to the next argument
 done
 
-# Require at least one positional argument
-# Returns number of elements in the array
 [[ ${#POSITIONAL[@]} -eq 0 ]] && die "No target specified. Use -h for help."
 TARGET="${POSITIONAL[0]}"   # the thing we want to find deps for
 
 # ── Sanity checks: required external tools ────────────────────────────────────
-# ldd   : "list dynamic dependencies" — prints shared libs an ELF needs
-# file  : identifies file types by magic bytes (we use it to detect ELFs)
-# Both are present in every base Nakshatra installation.
+
 command -v ldd  &>/dev/null || die "'ldd' not found. Is glibc installed?"
 command -v file &>/dev/null || die "'file' not found. Is file(1) installed?"
 
@@ -124,12 +105,6 @@ command -v file &>/dev/null || die "'file' not found. Is file(1) installed?"
 # ── Build the shared-library → package reverse lookup map ────────────────────
 
 info "Building shared-library → package map (this may take a moment)…"
-
-# Associative array:
-# declare - define variable with attribute
-# -A - Stands for Associative Array
-# SO_OWNER - name of associated array.
-# =() - start empty array.
 
 declare -A SO_OWNER=()
 
@@ -165,12 +140,9 @@ for pkgfile in "$PKG_DB"/*; do
             # Index the full versioned name: "libfoo.so.1.2.3" → package
             SO_OWNER["$basename_line"]="$pkgname"
 
-            # Also index a bare .so fallback: "libfoo.so" → package
-            # This catches cases where ldd reports just the soname without version.
-            # Syntax:  ${var%%.so*} strips everything from the first ".so" onward
+            
             sobase="${basename_line%%.so*}.so"   # e.g. libfoo.so.1.2.3 → libfoo.so
-            # Only set if not already set — first package to claim it wins
-            # ${var+_} expands to "_" if var is set, empty if not (safe under set -u)
+    
             [[ "${SO_OWNER[$sobase]+_}" ]] || SO_OWNER["$sobase"]="$pkgname"
         fi
 
@@ -179,33 +151,21 @@ done
 
 info "Indexed ${#SO_OWNER[@]} shared library entries."
 
-# ── resolve_so(): map a .so name or path to its owning package ────────────────
-# Input:  $1 = a shared library path (/lib64/libc.so.6) or name (libc.so.6)
-# Output: the owning package name printed to stdout, or empty string if not found
-# Four strategies tried in order from fastest to slowest:
-#   1. Direct exact lookup in SO_OWNER map
-#   2. Progressively strip version suffixes and retry
-#   3. Follow symlinks to the real filename and retry
-#   4. Grep all package DB files for the exact path (slowest, last resort)
+
 resolve_so() {
     local so="$1"
     local base
     base=$(basename "$so")   # strip any directory prefix
 
     # ── Strategy 1: direct lookup ─────────────────────────────────────────────
-    # Check if this exact name is in our map.
-    # ${SO_OWNER[$base]+_} expands to "_" if the key exists (even if value=""),
-    # or to "" if the key doesn't exist. This is the correct idiom under set -u.
+
     if [[ "${SO_OWNER[$base]+_}" ]]; then
         echo "${SO_OWNER[$base]}"
         return
     fi
 
     # ── Strategy 2: strip version suffixes ────────────────────────────────────
-    # ldd might say "libc.so.6" but the DB only has "libc.so", or vice versa.
-    # We iteratively strip the last ".something" from the name:
-    #   libfoo.so.1.2.3  →  libfoo.so.1.2  →  libfoo.so.1  →  libfoo.so
-    # and check the map after each step.
+
     local stripped="$base"
     while [[ "$stripped" == *.*.* ]]; do     # keep going while name has 2+ dots after .so
         stripped="${stripped%.*}"            # remove the last .component
@@ -213,8 +173,7 @@ resolve_so() {
     done
 
     # ── Strategy 3: follow symlinks ───────────────────────────────────────────
-    # Many .so files are symlinks:  /lib64/libc.so.6 → /lib64/libc-2.34.so
-    # The package DB might index the real filename, not the symlink name.
+
     if [[ -f "$so" ]]; then
         local real
         real=$(readlink -f "$so" 2>/dev/null || echo "$so")  # resolve symlink chain
@@ -223,10 +182,7 @@ resolve_so() {
         [[ "${SO_OWNER[$realbase]+_}" ]] && { echo "${SO_OWNER[$realbase]}"; return; }
 
         # ── Strategy 4: grep the raw DB ───────────────────────────────────────
-        # Slowest option — scan all package record files looking for this path.
-        # This catches edge cases not covered by the initial map build.
-        # grep -r : recursive scan of all files in PKG_DB
-        # grep -l : print only the filenames of matching records (not the lines)
+
         local rel_path="${so#/}"   # remove leading / to get e.g. lib64/libc.so.6
         local found
         found=$(grep -rl "^\.\?/${rel_path}$" "$PKG_DB" 2>/dev/null | head -1)
@@ -236,15 +192,7 @@ resolve_so() {
     echo ""   # not found — caller checks for empty return value
 }
 
-# ── elf_files_from_installed(): get ELF binary paths for an installed package ──
-#
-# Input:  $1 = package name, either exact (htop-3.2.1-x86_64-2) or short (htop)
-# Output: absolute path of each ELF binary/library that belongs to the package
-#
-# How we find the package record:
-#   - Try exact filename match first (user gave the full versioned name)
-#   - Then try a shell glob:  /var/log/packages/htop-[0-9]*
-#     The [0-9] ensures we only match the version number, not e.g. htop-extra
+
 elf_files_from_installed() {
     local pkgname="$1"
     local pkgfile=""
@@ -277,33 +225,21 @@ elf_files_from_installed() {
             continue
         fi
 
-        # Skip directory entries (trailing slash)
+
         [[ "$line" == */ ]] && continue
 
-        # Build absolute path from the relative entry
-        # Strip optional "./" prefix, then prepend "/"
+
         local abs="/${line#./}"
 
-        # Skip if the file doesn't actually exist on disk
-        # (can happen if the package is partially installed or the DB is stale)
+ 
         [[ -f "$abs" ]] || continue
 
-        # file -b = brief output (no filename prefix in the output).
-        # ELF files (executables and shared libraries) start with "ELF".
-        # We only emit actual ELF files; scripts, configs etc. are skipped.
         file -b "$abs" 2>/dev/null | grep -q "^ELF" && echo "$abs"
 
     done < "$pkgfile"
 }
 
-# ── elf_files_from_tgz(): extract and scan a .txz/.tgz package archive ───────
-#
-# Input:  $1 = path to the package archive file
-# Output: absolute paths of all ELF files found inside the archive
-#
-# Slackware packages are tarballs compressed with gzip (.tgz) or xz (.txz).
-# tar -xf auto-detects the compression format.
-# We extract to a temporary directory, scan for ELFs, then clean up on EXIT.
+
 elf_files_from_tgz() {
     local pkgfile="$1"
 
@@ -315,22 +251,12 @@ elf_files_from_tgz() {
     tar -xf "$pkgfile" -C "$TMPDIR_WORK" 2>/dev/null || \
         die "Failed to extract $pkgfile — is it a valid Slackware package?"
 
-    # find -type f : only regular files (not symlinks or dirs)
-    # -exec sh -c '...' _ {} \;  : run a shell for each file
-    # Inside the shell: file -b checks magic bytes, grep filters for ELF
     find "$TMPDIR_WORK" -type f -exec sh -c \
         'file -b "$1" 2>/dev/null | grep -q "^ELF" && echo "$1"' _ {} \;
 }
 
 # ── pkg_for_binary(): reverse-lookup which package owns a given binary ────────
-#
-# Input:  $1 = a binary name ("ls") or path ("/usr/bin/ls")
-# Output: line 1 = resolved absolute path of the binary
-#         line 2 = name of the package that owns it
-# Returns: 0 on success, 1 if not found
-#
-# This lets the user type  ./slack-deps.sh ls  without needing to know
-# that "ls" belongs to the "coreutils" package.
+
 pkg_for_binary() {
     local bin="$1"
     local abspath=""
@@ -347,13 +273,9 @@ pkg_for_binary() {
 
     [[ -z "$abspath" ]] && return 1   # couldn't find the binary at all
 
-    # Search the package DB for a record that lists this file.
-    # The relative path in the DB (e.g. "usr/bin/ls") is our search key.
-    # Records may list it as  "./usr/bin/ls"  or  "usr/bin/ls"  — we match both.
     local rel="${abspath#/}"   # strip leading /  →  usr/bin/ls
     local pkgfile
-    # grep -r : scan all files in PKG_DB
-    # grep -l : print only filenames of matching records
+
     pkgfile=$(grep -rl "^\./${rel}$\|^${rel}$" "$PKG_DB" 2>/dev/null | head -1)
 
     if [[ -n "$pkgfile" ]]; then
@@ -366,32 +288,22 @@ pkg_for_binary() {
 }
 
 # ── Cleanup trap ──────────────────────────────────────────────────────────────
-# The EXIT trap runs whenever the script exits — normally, on error, or on Ctrl-C.
-# It removes the temporary directory if one was created by elf_files_from_tgz().
+
 cleanup() { [[ -n "$TMPDIR_WORK" ]] && rm -rf "$TMPDIR_WORK"; }
 trap cleanup EXIT
 
 # ── Input mode detection ──────────────────────────────────────────────────────
-#
-# We support four types of input and handle each differently:
-#
-#   Mode 1 — .t?z archive:     extract it, scan for ELFs
-#   Mode 2 — binary name/path: resolve to single ELF via PATH or filesystem
-#   Mode 3 — package name:     look up in /var/log/packages, list its ELFs
 
 declare -a ELF_FILES=()   # will hold absolute paths of ELF files to analyse
 PKG_LABEL="$TARGET"       # label shown in the output header
 
 if [[ -f "$TARGET" && "$TARGET" == *.t?z ]]; then
-    # ── Mode 1: package archive file (.txz, .tgz, .tbz, .tlz) ───────────────
-    # The glob *.t?z matches any single character: txz, tgz, tbz, tlz
+
     info "Mode: package file  →  $TARGET"
     mapfile -t ELF_FILES < <(elf_files_from_tgz "$TARGET")
 
 elif [[ -f "$TARGET" ]] || command -v "$TARGET" &>/dev/null; then
-    # ── Mode 2: binary name or path ──────────────────────────────────────────
-    # Matches when TARGET is an existing file OR a name found in $PATH.
-    # Examples:  "ls", "python3", "/usr/bin/gcc", "./myprog"
+
     info "Mode: binary  →  $TARGET"
 
     # pkg_for_binary prints two lines to stdout; we capture them together
@@ -431,42 +343,17 @@ fi
 info "Found ${#ELF_FILES[@]} ELF file(s) to inspect."
 
 # ── Global result maps ────────────────────────────────────────────────────────
-# These are written to directly by collect_deps_for_elfs() below.
-# Using globals (instead of passing arrays by reference) avoids the bash 4.x
-# nameref bug where assignments through local -n namerefs are silently dropped.
+
 declare -A FOUND_PKGS=()  # set of owning packages found  (key=pkgname, value=1)
 declare -A UNRES=()       # set of unresolved .so names    (key=soname,  value=1)
 
 # ── collect_deps_for_elfs(): core dependency analysis function ────────────────
-#
-# Reads ELF file paths from stdin (one path per line).
-# For each ELF, calls ldd and parses its output.
-# Resolved packages are written into global FOUND_PKGS.
-# Unresolved .so names are written into global UNRES.
-#
-# Why stdin?
-#   Bash namerefs (local -n) for passing associative arrays into functions
-#   are unreliable in bash 4.x: assignments through the nameref to an array
-#   declared in the outer scope are silently discarded in some versions.
-#   stdin + globals sidesteps this entirely.
-#
-# ldd output format (two main forms):
-#
-#   Form A — normal library:
-#     "        libc.so.6 => /lib64/libc.so.6 (0x00007f...)"
-#      ^spaces  ^soname     ^resolved path     ^load address
-#
-#   Form B — dynamic linker (no "=>" form):
-#     "        /lib64/ld-linux-x86-64.so.2 (0x00007f...)"
-#      ^spaces  ^absolute path              ^load address
+
 collect_deps_for_elfs() {
     local elf
     while IFS= read -r elf; do
         [[ -z "$elf" ]] && continue   # skip blank lines from printf
 
-        # Run ldd on this ELF.
-        # 2>/dev/null : suppress ldd error messages
-        # || true     : don't abort under set -e if ldd exits non-zero
         local ldd_out
         ldd_out=$(ldd "$elf" 2>/dev/null) || true
         [[ -z "$ldd_out" ]] && continue   # no output → nothing to parse
@@ -475,12 +362,8 @@ collect_deps_for_elfs() {
 
             # ── Lines to skip ─────────────────────────────────────────────────
 
-            # linux-vdso.so.1 is a virtual DSO injected by the kernel.
-            # It has no file on disk and belongs to no installable package.
             [[ "$line" == *"linux-vdso"* ]]       && continue
 
-            # ldd prints "not a dynamic executable" for static binaries or
-            # files that aren't ELF at all (shouldn't happen here, but safe)
             [[ "$line" == *"not a dynamic"* ]]     && continue
 
             # Fully statically linked binaries produce this single line
@@ -489,17 +372,13 @@ collect_deps_for_elfs() {
             # ── Parse the library line ────────────────────────────────────────
             local soname="" sopath=""
 
-            # Form A: "    libfoo.so.1 => /lib64/libfoo.so.1 (0x7f...)"
-            # We anchor to leading whitespace (ldd indents all lines).
-            # BASH_REMATCH[1] = soname,  BASH_REMATCH[2] = resolved path
+
             if [[ "$line" =~ [[:space:]]([^[:space:]]+)[[:space:]]+\=\>[[:space:]]+([^[:space:]]+) ]]; then
                 soname="${BASH_REMATCH[1]}"   # e.g. libc.so.6
                 sopath="${BASH_REMATCH[2]}"   # e.g. /lib64/libc.so.6
                 # "(0x..." means the library was not found on disk
                 [[ "$sopath" == "(0x"* ]] && sopath=""
 
-            # Form B: "    /lib64/ld-linux-x86-64.so.2 (0x7f...)"
-            # Matches a leading-space + absolute path
             elif [[ "$line" =~ ^[[:space:]]+(/[^[:space:]]+) ]]; then
                 sopath="${BASH_REMATCH[1]}"   # e.g. /lib64/ld-linux-x86-64.so.2
                 soname="${sopath##*/}"        # basename: ld-linux-x86-64.so.2
@@ -523,9 +402,7 @@ collect_deps_for_elfs() {
 
             # ── Record the result ─────────────────────────────────────────────
             if [[ -n "$owner" ]]; then
-                # Using the map as a set: key = package name, value = 1.
-                # Duplicate entries are automatically deduplicated since
-                # assigning the same key twice just overwrites with "1" again.
+
                 FOUND_PKGS["$owner"]=1
 
                 # In verbose mode, print the per-library mapping line
@@ -550,16 +427,10 @@ echo "${BLD}━━━━━━━━━━━━━━━━━━━━━━�
 [[ $VERBOSE -eq 1 ]] && echo ""
 
 # ── First pass: direct (immediate) dependencies ───────────────────────────────
-# Feed all ELF paths into collect_deps_for_elfs via process substitution.
-# printf '%s\n' prints each array element on its own line.
-# < <(...)  feeds the process substitution output into the function's stdin.
-# The function runs in the CURRENT shell (not a subshell), so it can write
-# to the global FOUND_PKGS and UNRES arrays.
+
 collect_deps_for_elfs < <(printf '%s\n' "${ELF_FILES[@]}")
 
-# Remove the target itself from results.
-# This can appear if one of the package's own .so files happens to be listed
-# as a dependency of another binary in the same package.
+
 unset "FOUND_PKGS[$TARGET]"
 for k in "${!FOUND_PKGS[@]}"; do
     # Also remove versioned forms, e.g. if TARGET=htop, remove htop-3.2.1-x86_64-2
@@ -567,20 +438,7 @@ for k in "${!FOUND_PKGS[@]}"; do
 done
 
 # ── Optional recursive pass: full transitive dependency tree ──────────────────
-#
-# With -r we don't just find what htop needs — we also find what those
-# packages need, and what THOSE need, all the way down.
-#
-# Algorithm: Breadth-First Search (BFS)
-#   - Initial queue = direct deps found above
-#   - While queue is not empty:
-#       - Dequeue a package
-#       - Find its ELFs and run ldd on them
-#       - Any new package discovered → add to queue
-#   - Result = every package reachable transitively
-#
-# BFS is used instead of DFS to process packages "level by level",
-# and the visited map prevents infinite loops from circular deps.
+
 if [[ $RECURSIVE -eq 1 && ${#FOUND_PKGS[@]} -gt 0 ]]; then
     info "Resolving transitive dependencies…"
 
@@ -605,21 +463,14 @@ if [[ $RECURSIVE -eq 1 && ${#FOUND_PKGS[@]} -gt 0 ]]; then
         [[ "${visited[$current]+_}" ]] && continue
         visited["$current"]=1
 
-        # Get ELF files for this dependency package
         mapfile -t sub_elfs < <(elf_files_from_installed "$current" 2>/dev/null || true)
         [[ ${#sub_elfs[@]} -eq 0 ]] && continue
-
-        # Analyse — results accumulate into the global FOUND_PKGS
         collect_deps_for_elfs < <(printf '%s\n' "${sub_elfs[@]}")
-
-        # Queue any newly discovered packages
         for p in "${!FOUND_PKGS[@]}"; do
             [[ "${ALL_PKGS[$p]+_}" ]] || bfs_queue+=("$p")
             ALL_PKGS["$p"]=1
         done
     done
-
-    # Merge ALL_PKGS into FOUND_PKGS so the output section sees everything
     for p in "${!ALL_PKGS[@]}"; do FOUND_PKGS["$p"]=1; done
 fi
 
@@ -630,17 +481,9 @@ if [[ ${#FOUND_PKGS[@]} -eq 0 ]]; then
 else
     echo "${BLD}  Required Slackware packages (${#FOUND_PKGS[@]}):${RST}"
     echo ""
-    # Sort package names alphabetically for consistent, readable output.
-    # We print two columns:
-    #   left  = base package name (without version/arch/build)
-    #   right = full record name  (with version/arch/build)
+
     for pkg in $(printf '%s\n' "${!FOUND_PKGS[@]}" | sort); do
 
-        # Parse the Slackware naming convention:  name-version-arch-build
-        # The regex handles package names that themselves contain hyphens
-        # (e.g. "aaa-base", "mozilla-firefox").
-        # Key insight: the version always starts with a digit, so we use
-        # -([0-9][^-]*) to find where the version begins.
         if [[ "$pkg" =~ ^([^-]+(-[^-]+)*)-([0-9][^-]*)-([^-]+)-([^-]+)$ ]]; then
             name="${BASH_REMATCH[1]}"   # base name only (e.g. "glibc")
             printf "  ${GRN}%-35s${RST}  %s\n" "$name" "$pkg"
@@ -652,9 +495,6 @@ else
 fi
 
 # ── Output section: unresolved libraries (shown only with -u) ─────────────────
-# These are .so files that ldd found but we couldn't map to any package.
-# Common causes: third-party software not in the Slackware DB, or
-# libraries installed manually outside the package manager.
 if [[ $SHOW_UNRESOLVED -eq 1 && ${#UNRES[@]} -gt 0 ]]; then
     echo ""
     echo "${BLD}  ${YEL}Unresolved shared libraries (${#UNRES[@]}):${RST}"

@@ -86,7 +86,7 @@ usage() {
 # $# → number of arguments passed
 [[ $# -eq 0 ]] && usage   # no arguments at all → show help
 
-POSITIONAL=()   # collects non-option arguments (the target package/binary)
+POSITIONAL=()   # collects non-option arguments (the target package/binary/txz file)
 
 # Loop through all arguments.
 # We use a while loop instead of getopts because we want to support

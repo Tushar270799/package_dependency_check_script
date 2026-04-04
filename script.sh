@@ -83,6 +83,7 @@ usage() {
 }
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
+# $# → number of arguments passed
 [[ $# -eq 0 ]] && usage   # no arguments at all → show help
 
 POSITIONAL=()   # collects non-option arguments (the target package/binary)
@@ -90,6 +91,7 @@ POSITIONAL=()   # collects non-option arguments (the target package/binary)
 # Loop through all arguments.
 # We use a while loop instead of getopts because we want to support
 # long options like --recursive as well as short ones like -r.
+# $# → number of arguments passed
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -r|--recursive)  RECURSIVE=1 ;;

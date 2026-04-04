@@ -1,39 +1,14 @@
 #!/bin/bash
-# =============================================================================
-# slack-deps.sh — Runtime Dependency Finder for Slackware / Nakshatra Linux
-# =============================================================================
-#
-# PURPOSE:
-#   Tells you which Slackware packages a given program or package needs at
-#   *runtime* — i.e. the shared libraries (.so files) that must be present
-#   for it to actually run.  This is NOT build-time / compile-time deps.
-#
+
 # HOW IT WORKS (3 steps):
 #   1. Find every ELF binary/library inside the target package or binary
 #   2. Run `ldd` on each ELF to get the list of required shared libraries
 #   3. Look up each .so in /var/log/packages to find the owning package
-#
-# Usage:
-#   ./slack-deps.sh [OPTIONS] <target>
-#
-# <target> can be:
-#   - A binary name in PATH       (e.g. "ls", "mkdir", "python3")
-#   - An absolute binary path     (e.g. "/usr/bin/ls")
-#   - An installed package name   (e.g. "coreutils", "htop")
-#   - A .t?z package file         (e.g. "/tmp/curl-7.88-x86_64-1.txz")
-#
-# OPTIONS:
-#   -r, --recursive     Also resolve deps-of-deps (full transitive tree)
-#   -v, --verbose       Show individual .so → package mappings
-#   -u, --unresolved    Show libraries not owned by any Slackware package
-#   -h, --help          Show this help
-#
 # EXAMPLES:
 #   ./slack-deps.sh htop
 #   ./slack-deps.sh -v ls
 #   ./slack-deps.sh -r -v mozilla-firefox
 #   ./slack-deps.sh -u /tmp/myapp-1.0-x86_64-1.txz
-# =============================================================================
 
 # ── Shell safety options ──────────────────────────────────────────────────────
 # -e  : exit immediately if any command returns a non-zero status
@@ -70,7 +45,7 @@ warn() { echo "${YEL}WARN:${RST}  $*" >&2; }
 RECURSIVE=0         # -r flag: if 1, resolve the full transitive dep tree
 VERBOSE=0           # -v flag: if 1, print each individual .so → package line
 SHOW_UNRESOLVED=0   # -u flag: if 1, list .so files not owned by any package
-PKG_DB="/var/log/packages"  # Slackware/Nakshatra package database directory
+PKG_DB="/var/log/packages"  # Nakshatra package database directory
 TMPDIR_WORK=""      # path to temp extraction dir; empty until a .txz is used
 
 # ── usage(): print the Usage block from the script header and exit ────────────

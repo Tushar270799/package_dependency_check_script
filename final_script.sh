@@ -1,5 +1,63 @@
 #!/bin/bash
 # =============================================================================
+# EXECUTION FLOW
+# =============================================================================
+#
+#  Script starts
+#       │
+#       ▼
+#  Parse arguments (-v, -u, -h flags + TARGET)
+#       │
+#       ▼
+#  Sanity checks (ldd, file, /var/log/packages present)
+#       │
+#       ▼
+#  Build SO_OWNER map (scan all /var/log/packages/*)
+#       │
+#       ▼
+#  Detect input mode ──────────────────────────────────────────────────┐
+#   │              │                                                    │
+#  *.t?z         binary/path                                       pkg name
+#   │              │                                                    │
+#  Extract .txz  Find binary path                               Lookup pkg record
+#  (tar to tmp)  (readlink -f / command -v)                  (glob /var/log/pkg/*)
+#   │              │                                                    │
+#   └──────────────┴────────────────────────────────────────────────────┘
+#                                    │
+#                                    ▼
+#                         Find ELF binaries
+#                         (file -b … | grep ^ELF)
+#                                    │
+#                          ELF_FILES empty? ── yes ──► die() exit 1
+#                                    │ no
+#                                    ▼
+#                         collect_deps_for_elfs()
+#                         (ldd each ELF, parse output)
+#                                    │
+#                                    ▼
+#                         resolve_so() × 4 strategies
+#                         1. SO_OWNER map lookup
+#                         2. Strip version suffixes
+#                         3. Follow symlinks (readlink)
+#                         4. grep /var/log/packages
+#                                    │
+#                          Owner found? ── no ──► UNRES[soname]=1
+#                                    │ yes
+#                                    ▼
+#                         FOUND_PKGS[pkg]=1
+#                                    │
+#                                    ▼
+#                         Remove TARGET from results
+#                         (unset self + versioned forms)
+#                                    │
+#                                    ▼
+#                         Print results
+#                         (package list + unresolved if -u)
+#                                    │
+#                                    ▼
+#                                 Exit 0
+#
+# =============================================================================
 # slack-deps.sh — Runtime Dependency Finder for Slackware / Nakshatra Linux
 # =============================================================================
 #

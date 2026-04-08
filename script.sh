@@ -35,21 +35,17 @@
 #   ./slack-deps.sh -u /tmp/myapp-1.0-x86_64-1.txz
 # =============================================================================
 
-# ── Shell safety options ──────────────────────────────────────────────────────
-# -e  : exit immediately if any command returns a non-zero status
-# -u  : treat unset variables as errors (catches typos in variable names)
-# -o pipefail : if any command in a pipeline fails, the whole pipeline fails
-#               (without this, "false | true" would silently succeed)
+
 set -euo pipefail
 
 # ── Terminal colour codes ─────────────────────────────────────────────────────
 
-RED=$'\e[1;31m'   # bold red    — fatal errors
-YEL=$'\e[1;33m'   # bold yellow — warnings and unresolved items
-GRN=$'\e[1;32m'   # bold green  — package names in output
-CYN=$'\e[1;36m'   # bold cyan   — informational ":: " status lines
-BLD=$'\e[1m'      # bold only   — section headers and counts
-RST=$'\e[0m'      # reset all   — must follow every coloured string
+RED=$'\e[1;31m'   
+YEL=$'\e[1;33m'   
+GRN=$'\e[1;32m'  
+CYN=$'\e[1;36m'  
+BLD=$'\e[1m'      
+RST=$'\e[0m'     
 
 # ── Helper functions ──────────────────────────────────────────────────────────
 
@@ -60,11 +56,11 @@ info() { echo "${CYN}::${RST} $*"; }
 warn() { echo "${YEL}WARN:${RST}  $*" >&2; }
 
 # ── Default option values ─────────────────────────────────────────────────────
-RECURSIVE=0         # -r flag: if 1, resolve the full transitive dep tree
-VERBOSE=0           # -v flag: if 1, print each individual .so → package line
-SHOW_UNRESOLVED=0   # -u flag: if 1, list .so files not owned by any package
-PKG_DB="/var/log/packages"  # Slackware/Nakshatra package database directory
-TMPDIR_WORK=""      # path to temp extraction dir; empty until a .txz is used
+RECURSIVE=0         
+VERBOSE=0           
+SHOW_UNRESOLVED=0  
+PKG_DB="/var/log/packages"  
+TMPDIR_WORK=""     
 
 # ── usage(): print the Usage block from the script header and exit ────────────
 
@@ -74,10 +70,8 @@ usage() {
 }
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
-# $# → number of arguments passed
-[[ $# -eq 0 ]] && usage   # no arguments at all → show help
-
-POSITIONAL=()   # collects non-option arguments (the target package/binary/txz file)
+[[ $# -eq 0 ]] && usage   
+POSITIONAL=()   
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -86,20 +80,19 @@ while [[ $# -gt 0 ]]; do
         -u|--unresolved) SHOW_UNRESOLVED=1 ;;
         -h|--help)       usage ;;
         -*)              die "Unknown option: $1" ;;
-        *)               POSITIONAL+=("$1") ;;  # non-option: save it
+        *)               POSITIONAL+=("$1") ;;  
     esac
-    shift   # advance to the next argument
+    shift   
 done
 
 [[ ${#POSITIONAL[@]} -eq 0 ]] && die "No target specified. Use -h for help."
-TARGET="${POSITIONAL[0]}"   # the thing we want to find deps for
+TARGET="${POSITIONAL[0]}"   
 
 # ── Sanity checks: required external tools ────────────────────────────────────
 
 command -v ldd  &>/dev/null || die "'ldd' not found. Is glibc installed?"
 command -v file &>/dev/null || die "'file' not found. Is file(1) installed?"
 
-# The package database directory must exist
 [[ -d "$PKG_DB" ]] || die "Package database not found at $PKG_DB"
 
 # ── Build the shared-library → package reverse lookup map ────────────────────
@@ -109,44 +102,37 @@ info "Building shared-library → package map (this may take a moment)…"
 declare -A SO_OWNER=()
 
 for pkgfile in "$PKG_DB"/*; do
-    # Some entries in /var/log/packages/ might be directories — skip them
     [[ -f "$pkgfile" ]] || continue
 
-    # The package name is the filename itself (e.g. glibc-2.34-x86_64-1)
     pkgname=$(basename "$pkgfile")
 
-    # Flag: 0 = still in metadata section, 1 = inside FILE LIST section
     in_filelist=0
 
     while IFS= read -r line; do
-        # IFS=  : don't strip leading/trailing whitespace
-        # -r    : don't interpret backslashes
 
         if [[ $in_filelist -eq 0 ]]; then
-            # In the metadata section — wait for the FILE LIST marker
             [[ "$line" == "FILE LIST:" ]] && in_filelist=1
             continue
         fi
 
         # ── Inside FILE LIST ──────────────────────────────────────────────────
 
-        [[ "$line" == */ ]] && continue # skip direcotry    
+        [[ "$line" == */ ]] && continue    
         
-        stripped_line="${line#./}"            # ./usr/lib/libc.so.6 → usr/lib/libc.so.6
-        basename_line="${stripped_line##*/}"  # usr/lib/libc.so.6 → libc.so.6
+        stripped_line="${line#./}"            
+        basename_line="${stripped_line##*/}"  
 
         if [[ "$basename_line" == *.so || "$basename_line" == *.so.* ]]; then
 
-            # Index the full versioned name: "libfoo.so.1.2.3" → package
             SO_OWNER["$basename_line"]="$pkgname"
 
             
-            sobase="${basename_line%%.so*}.so"   # e.g. libfoo.so.1.2.3 → libfoo.so
+            sobase="${basename_line%%.so*}.so"  
     
             [[ "${SO_OWNER[$sobase]+_}" ]] || SO_OWNER["$sobase"]="$pkgname"
         fi
 
-    done < "$pkgfile"   # redirect the package file into the while loop
+    done < "$pkgfile"   
 done
 
 info "Indexed ${#SO_OWNER[@]} shared library entries."
@@ -155,7 +141,7 @@ info "Indexed ${#SO_OWNER[@]} shared library entries."
 resolve_so() {
     local so="$1"
     local base
-    base=$(basename "$so")   # strip any directory prefix
+    base=$(basename "$so")   
 
     # ── Strategy 1: direct lookup ─────────────────────────────────────────────
 
@@ -167,8 +153,8 @@ resolve_so() {
     # ── Strategy 2: strip version suffixes ────────────────────────────────────
 
     local stripped="$base"
-    while [[ "$stripped" == *.*.* ]]; do     # keep going while name has 2+ dots after .so
-        stripped="${stripped%.*}"            # remove the last .component
+    while [[ "$stripped" == *.*.* ]]; do     
+        stripped="${stripped%.*}"            
         [[ "${SO_OWNER[$stripped]+_}" ]] && { echo "${SO_OWNER[$stripped]}"; return; }
     done
 
@@ -176,20 +162,20 @@ resolve_so() {
 
     if [[ -f "$so" ]]; then
         local real
-        real=$(readlink -f "$so" 2>/dev/null || echo "$so")  # resolve symlink chain
+        real=$(readlink -f "$so" 2>/dev/null || echo "$so")  
         local realbase
         realbase=$(basename "$real")
         [[ "${SO_OWNER[$realbase]+_}" ]] && { echo "${SO_OWNER[$realbase]}"; return; }
 
         # ── Strategy 4: grep the raw DB ───────────────────────────────────────
 
-        local rel_path="${so#/}"   # remove leading / to get e.g. lib64/libc.so.6
+        local rel_path="${so#/}"   
         local found
         found=$(grep -rl "^\.\?/${rel_path}$" "$PKG_DB" 2>/dev/null | head -1)
         [[ -n "$found" ]] && { basename "$found"; return; }
     fi
 
-    echo ""   # not found — caller checks for empty return value
+    echo ""  
 }
 
 
@@ -202,18 +188,16 @@ elf_files_from_installed() {
         pkgfile="$PKG_DB/$pkgname"
     else
         # ── Fuzzy/glob match ──────────────────────────────────────────────────
-        # Bash expands the glob before assigning to the array.
-        # If nothing matches, the array contains the literal glob string.
         local matches=( "$PKG_DB/${pkgname}"-[0-9]* )
         pkgfile=""
         local m
         for m in "${matches[@]}"; do
-            [[ -f "$m" ]] && { pkgfile="$m"; break; }  # use first real match
+            [[ -f "$m" ]] && { pkgfile="$m"; break; }  
         done
 
         if [[ -z "$pkgfile" ]]; then
             warn "Package '$pkgname' is not installed (not found in $PKG_DB)"
-            return 1   # signal failure to the caller
+            return 1  
         fi
     fi
 
@@ -243,11 +227,9 @@ elf_files_from_installed() {
 elf_files_from_tgz() {
     local pkgfile="$1"
 
-    # mktemp -d creates a unique temporary directory safely
     TMPDIR_WORK=$(mktemp -d /tmp/slack-deps.XXXXXX)
     info "Extracting package to $TMPDIR_WORK …"
 
-    # Extract the archive into the temp directory
     tar -xf "$pkgfile" -C "$TMPDIR_WORK" 2>/dev/null || \
         die "Failed to extract $pkgfile — is it a valid Slackware package?"
 
@@ -261,30 +243,27 @@ pkg_for_binary() {
     local bin="$1"
     local abspath=""
 
-    # Resolve to an absolute path:
-    # Case 1: user gave a path that already exists as a file
     if [[ -f "$bin" ]]; then
-        abspath=$(readlink -f "$bin")   # resolve any symlinks in the path
+        abspath=$(readlink -f "$bin")  
     else
-        # Case 2: look up the binary name in PATH (like the shell does)
         abspath=$(command -v "$bin" 2>/dev/null) || true
         [[ -n "$abspath" ]] && abspath=$(readlink -f "$abspath")
     fi
 
-    [[ -z "$abspath" ]] && return 1   # couldn't find the binary at all
+    [[ -z "$abspath" ]] && return 1   
 
-    local rel="${abspath#/}"   # strip leading /  →  usr/bin/ls
+    local rel="${abspath#/}"  
     local pkgfile
 
     pkgfile=$(grep -rl "^\./${rel}$\|^${rel}$" "$PKG_DB" 2>/dev/null | head -1)
 
     if [[ -n "$pkgfile" ]]; then
-        echo "$abspath"               # line 1: the binary's absolute path
-        echo "$(basename "$pkgfile")" # line 2: owning package record name
+        echo "$abspath"               
+        echo "$(basename "$pkgfile")" 
         return 0
     fi
 
-    return 1   # not found in any package record
+    return 1   
 }
 
 # ── Cleanup trap ──────────────────────────────────────────────────────────────
@@ -294,8 +273,8 @@ trap cleanup EXIT
 
 # ── Input mode detection ──────────────────────────────────────────────────────
 
-declare -a ELF_FILES=()   # will hold absolute paths of ELF files to analyse
-PKG_LABEL="$TARGET"       # label shown in the output header
+declare -a ELF_FILES=()   
+PKG_LABEL="$TARGET"       
 
 if [[ -f "$TARGET" && "$TARGET" == *.t?z ]]; then
 
@@ -306,17 +285,14 @@ elif [[ -f "$TARGET" ]] || command -v "$TARGET" &>/dev/null; then
 
     info "Mode: binary  →  $TARGET"
 
-    # pkg_for_binary prints two lines to stdout; we capture them together
     local_result=$(pkg_for_binary "$TARGET") || true
 
     if [[ -n "$local_result" ]]; then
-        abspath=$(echo "$local_result" | head -1)    # line 1: binary path
-        owner_pkg=$(echo "$local_result" | tail -1)  # line 2: package name
+        abspath=$(echo "$local_result" | head -1)   
+        owner_pkg=$(echo "$local_result" | tail -1) 
         PKG_LABEL="$TARGET  (package: $owner_pkg)"
 
-        # Verify it's actually an ELF — could be a shell script (#!/bin/bash)
-        # or a Python script etc., which ldd can't analyse
-        if file -b "$abspath" 2>/dev/null | grep -q "^ELF"; then
+\\        if file -b "$abspath" 2>/dev/null | grep -q "^ELF"; then
             ELF_FILES=( "$abspath" )
         else
             die "'$abspath' is not an ELF binary (it may be a shell script or text file)"
@@ -327,11 +303,8 @@ elif [[ -f "$TARGET" ]] || command -v "$TARGET" &>/dev/null; then
 
 else
     # ── Mode 3: installed package name ───────────────────────────────────────
-    # Examples: "htop", "coreutils", "mozilla-firefox", "glibc-2.34-x86_64-1"
-    info "Mode: installed package  →  $TARGET"
-    # "|| true" prevents set -e from killing the script if the package
-    # isn't found — elf_files_from_installed will already print a warning.
-    mapfile -t ELF_FILES < <(elf_files_from_installed "$TARGET" || true)
+\    info "Mode: installed package  →  $TARGET"
+\\    mapfile -t ELF_FILES < <(elf_files_from_installed "$TARGET" || true)
 fi
 
 # ── Guard: we must have at least one ELF to analyse ──────────────────────────
@@ -344,19 +317,19 @@ info "Found ${#ELF_FILES[@]} ELF file(s) to inspect."
 
 # ── Global result maps ────────────────────────────────────────────────────────
 
-declare -A FOUND_PKGS=()  # set of owning packages found  (key=pkgname, value=1)
-declare -A UNRES=()       # set of unresolved .so names    (key=soname,  value=1)
+declare -A FOUND_PKGS=()  
+declare -A UNRES=()       
 
 # ── collect_deps_for_elfs(): core dependency analysis function ────────────────
 
 collect_deps_for_elfs() {
     local elf
     while IFS= read -r elf; do
-        [[ -z "$elf" ]] && continue   # skip blank lines from printf
+        [[ -z "$elf" ]] && continue   
 
         local ldd_out
         ldd_out=$(ldd "$elf" 2>/dev/null) || true
-        [[ -z "$ldd_out" ]] && continue   # no output → nothing to parse
+        [[ -z "$ldd_out" ]] && continue  
 
         while IFS= read -r line; do
 
@@ -366,7 +339,6 @@ collect_deps_for_elfs() {
 
             [[ "$line" == *"not a dynamic"* ]]     && continue
 
-            # Fully statically linked binaries produce this single line
             [[ "$line" == *"statically linked"* ]] && continue
 
             # ── Parse the library line ────────────────────────────────────────
@@ -374,16 +346,15 @@ collect_deps_for_elfs() {
 
 
             if [[ "$line" =~ [[:space:]]([^[:space:]]+)[[:space:]]+\=\>[[:space:]]+([^[:space:]]+) ]]; then
-                soname="${BASH_REMATCH[1]}"   # e.g. libc.so.6
-                sopath="${BASH_REMATCH[2]}"   # e.g. /lib64/libc.so.6
-                # "(0x..." means the library was not found on disk
+                soname="${BASH_REMATCH[1]}"   
+                sopath="${BASH_REMATCH[2]}"   
                 [[ "$sopath" == "(0x"* ]] && sopath=""
 
             elif [[ "$line" =~ ^[[:space:]]+(/[^[:space:]]+) ]]; then
-                sopath="${BASH_REMATCH[1]}"   # e.g. /lib64/ld-linux-x86-64.so.2
-                soname="${sopath##*/}"        # basename: ld-linux-x86-64.so.2
+                sopath="${BASH_REMATCH[1]}"   
+                soname="${sopath##*/}"       
             else
-                continue   # line matched neither form — skip
+                continue  
             fi
 
             [[ -z "$soname" ]] && continue
@@ -391,11 +362,9 @@ collect_deps_for_elfs() {
             # ── Resolve .so to its owning package ─────────────────────────────
             local owner=""
 
-            # Try by full path first (more accurate — handles symlinks)
             if [[ -n "$sopath" && "$sopath" != "not" ]]; then
                 owner=$(resolve_so "$sopath")
             fi
-            # Fall back to soname alone
             if [[ -z "$owner" ]]; then
                 owner=$(resolve_so "$soname")
             fi
@@ -405,17 +374,14 @@ collect_deps_for_elfs() {
 
                 FOUND_PKGS["$owner"]=1
 
-                # In verbose mode, print the per-library mapping line
                 if [[ $VERBOSE -eq 1 ]]; then
                     printf "    ${GRN}%-40s${RST} → %s\n" "$soname" "$owner"
                 fi
             else
-                # Not found in any package — record as unresolved
                 UNRES["$soname"]=1
             fi
 
         done <<< "$ldd_out"
-        # <<< is a "herestring" — feeds the string into the while loop's stdin
     done
 }
 
@@ -433,7 +399,6 @@ collect_deps_for_elfs < <(printf '%s\n' "${ELF_FILES[@]}")
 
 unset "FOUND_PKGS[$TARGET]"
 for k in "${!FOUND_PKGS[@]}"; do
-    # Also remove versioned forms, e.g. if TARGET=htop, remove htop-3.2.1-x86_64-2
     [[ "$k" == "${TARGET}-"* ]] && unset "FOUND_PKGS[$k]"
 done
 
@@ -442,24 +407,17 @@ done
 if [[ $RECURSIVE -eq 1 && ${#FOUND_PKGS[@]} -gt 0 ]]; then
     info "Resolving transitive dependencies…"
 
-    # ALL_PKGS collects every package seen across all BFS iterations
     declare -A ALL_PKGS=()
     for p in "${!FOUND_PKGS[@]}"; do ALL_PKGS["$p"]=1; done
 
-    # bfs_queue is a regular indexed array used as a FIFO queue
-    # Initialised with the direct deps
     declare -a bfs_queue=("${!FOUND_PKGS[@]}")
 
-    # visited prevents reprocessing the same package (handles circular deps)
     declare -A visited=()
 
     while [[ ${#bfs_queue[@]} -gt 0 ]]; do
-        # Dequeue: take the first element
         current="${bfs_queue[0]}"
-        # Remove element 0 by re-slicing the array from index 1 onward
         bfs_queue=("${bfs_queue[@]:1}")
 
-        # Skip if we've already processed this package
         [[ "${visited[$current]+_}" ]] && continue
         visited["$current"]=1
 
@@ -488,7 +446,6 @@ else
             name="${BASH_REMATCH[1]}"   # base name only (e.g. "glibc")
             printf "  ${GRN}%-35s${RST}  %s\n" "$name" "$pkg"
         else
-            # Fallback for unexpected name formats
             printf "  ${GRN}%s${RST}\n" "$pkg"
         fi
     done
